@@ -1,0 +1,27 @@
+# https://taskfile.dev
+
+version: '3'
+
+#includes:
+#  docker:
+#    taskfile: ./docker/Taskfile.yml
+#    dir: .
+
+dotenv: ['.env']
+
+tasks:
+  lint:
+    desc: run the linter
+    cmds:
+      - |
+        goimports -w ./internal/*
+        golangci-lint run ./...
+  install-lefthook:
+    desc: install lefthook in git actions
+    cmd: lefthook install
+
+  build-server:
+    desc: build the server
+    cmds:
+      - |
+        go build .
