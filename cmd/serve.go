@@ -63,7 +63,7 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 
 		vch := make(chan dto.VideoFrame)
 		lkm := sfu.NewManager(lkSrv, token, vch)
-		if err := lkm.Initialize(); err != nil {
+		if err := lkm.Initialize(1); err != nil {
 			log.Fatalf("error initializing livekit: %v", err)
 		}
 

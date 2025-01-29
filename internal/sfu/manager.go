@@ -15,7 +15,7 @@ type SFU struct {
 	url   string
 	vch   chan dto.VideoFrame
 	room  *lksdk.Room
-	track *lksdk.LocalTrack
+	track map[int]*lksdk.LocalTrack
 }
 
 func NewManager(url string, token string, vch chan dto.VideoFrame) *SFU {
@@ -24,11 +24,11 @@ func NewManager(url string, token string, vch chan dto.VideoFrame) *SFU {
 		url:   url,
 		vch:   vch,
 		room:  nil,
-		track: nil,
+		track: make(map[int]*lksdk.LocalTrack),
 	}
 }
 
-func (sfu *SFU) Initialize() error {
+func (sfu *SFU) Initialize(nrOfTracks int) error {
 	callback := lksdk.NewRoomCallback()
 	callback.OnDisconnected = func() {
 		// handle disconnect
@@ -44,27 +44,31 @@ func (sfu *SFU) Initialize() error {
 
 	sfu.room = room
 
-	track, err := lksdk.NewLocalTrack(webrtc.RTPCodecCapability{ //nolint:exhaustruct
-		MimeType: webrtc.MimeTypeVP8,
-	})
+	for trackIdx := range nrOfTracks + 1 {
+		track, err := lksdk.NewLocalTrack(webrtc.RTPCodecCapability{ //nolint:exhaustruct
+			MimeType: webrtc.MimeTypeVP8,
+		})
 
-	sfu.track = track
+		sfu.track[trackIdx] = track
 
-	if err != nil {
-		return fmt.Errorf("error creating track: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("error creating track: %w", err)
+		}
 
-	_, err = sfu.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{ //nolint:exhaustruct
-		Name:   "cam-1",
-		Source: 0,
-		//VideoWidth:  1920,
-		//VideoHeight: 1080,
-		DisableDTX: false,
-		Stereo:     false,
-		Encryption: 0,
-	})
-	if err != nil {
-		return fmt.Errorf("error in publish: %w", err)
+		name := fmt.Sprintf("cam-%d", trackIdx)
+
+		_, err = sfu.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{ //nolint:exhaustruct
+			Name:   name,
+			Source: 0,
+			//VideoWidth:  1920,
+			//VideoHeight: 1080,
+			DisableDTX: false,
+			Stereo:     false,
+			Encryption: 0,
+		})
+		if err != nil {
+			return fmt.Errorf("error in publish: %w", err)
+		}
 	}
 
 	return nil
@@ -72,7 +76,7 @@ func (sfu *SFU) Initialize() error {
 
 func (sfu *SFU) Run() {
 	for frame := range sfu.vch {
-		if err := sfu.track.WriteSample(media.Sample{ //nolint:exhaustruct
+		if err := sfu.track[frame.Source].WriteSample(media.Sample{ //nolint:exhaustruct
 			Data:     frame.Frame,
 			Duration: frame.Duration,
 		}, nil); err != nil {
