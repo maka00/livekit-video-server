@@ -1,0 +1,56 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  DCR: "${DCR}"
+  VERSION: "1.0"
+  IMAGE: "{{.DCR}}livekit-video-server:{{.VERSION}}"
+
+tasks:
+
+  echo:
+    desc: debug
+    cmds:
+      - |
+        echo {{.DCR}}
+        echo {{.VERSION}}
+        echo {{.IMAGE}}
+  run-server-it:
+    desc: "run the server container on video10 and video11."
+    cmds:
+      - |
+        docker run -it --rm \
+        --device /dev/video10 \
+        --device /dev/video11 \
+        --network host \
+        --entrypoint /bin/bash \
+        -e GST_DEBUG=3 \
+        -e PIPELINE="v4l2src device=/dev/video10 ! queue ! videoconvert ! vp8enc target-bitrate=3000000 keyframe-max-dist=240 deadline=1 ! queue ! fakesink" \
+        --name livekit-streamer \
+        {{.IMAGE}}
+  run-server:
+    desc: "run the server container on video10 and video11."
+
+    cmds:
+      - |
+        docker run -it --rm \
+        --device /dev/video10 \
+        --device /dev/video11 \
+        --network host \
+        -e GST_DEBUG=3 \
+        -e PIPELINES=2 \
+        -e PIPELINE_0="v4l2src device=/dev/video10 ! videoconvert ! vp8enc target-bitrate=1500000 keyframe-max-dist=240 deadline=1 ! appsink emit-signals=true name=sink" \
+        -e PIPELINE_1="v4l2src device=/dev/video11 ! videoconvert ! vp8enc target-bitrate=1500000 keyframe-max-dist=240 deadline=1 ! appsink emit-signals=true name=sink" \
+        --name livekit-streamer \
+        {{.IMAGE}}
+  build-server:
+    desc: build the docker container set with ARCH="linux/amd64""
+    cmds:
+      - |
+        docker build \
+        --platform linux/amd64 \
+        --build-arg PLATFORM=amd64 \
+        -t {{.IMAGE}} \
+        -f docker/server.dockerfile \
+        .
