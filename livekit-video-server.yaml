@@ -3,8 +3,8 @@ LIVEKIT_SERVER: ws://brick.recursio.io:7880
 ROOM_ID: room1
 CLIENT_ID: video-server
 
-PIPELINES: 2
-PIPELINE_0: >
+PIPELINES: 1
+PIPELINE_2: >
   v4l2src device=/dev/video10 
   ! videoconvert 
   ! vp8enc target-bitrate=1500000 keyframe-max-dist=240 deadline=1 
@@ -14,3 +14,20 @@ PIPELINE_1: >
   ! videoconvert 
   ! vp8enc target-bitrate=1500000 keyframe-max-dist=240 deadline=1 
   ! appsink emit-signals=true name=sink
+PIPELINE_0: >
+  v4l2src device=/dev/video11
+  ! queue 
+  ! tee name=t
+  t.
+  ! videoconvert 
+  ! vp8enc target-bitrate=1500000 keyframe-max-dist=240 deadline=1 
+  ! appsink emit-signals=true name=sink_h
+  t.
+  ! videoconvert 
+  ! vp8enc target-bitrate=1000000 keyframe-max-dist=240 deadline=1 
+  ! appsink emit-signals=true name=sink_m
+  t.
+  ! videoconvert 
+  ! video/x-raw 
+  ! vp8enc target-bitrate=500000 keyframe-max-dist=240 deadline=1 
+  ! appsink emit-signals=true name=sink_l

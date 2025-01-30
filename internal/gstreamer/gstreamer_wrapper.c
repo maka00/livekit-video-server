@@ -5,6 +5,10 @@
 #include <gst/app/gstappsink.h>
 
 void gstreamer_on_new_sample(GstAppSink *appsink, void* user_data);
+void gstreamer_on_new_sample_high(GstAppSink *appsink, void* user_data);
+void gstreamer_on_new_sample_medium(GstAppSink *appsink, void* user_data);
+void gstreamer_on_new_sample_low(GstAppSink *appsink, void* user_data);
+void gstreamer_on_new_sample_quality(GstAppSink *appsink, void* user_data, int quality);
 
 gboolean gstreamer_bus_watch(GstBus *bus, GstMessage *msg, void *user_data);
 static GMainLoop *loop = NULL;
@@ -62,10 +66,34 @@ void gstreamer_on_new_sample(GstAppSink *appsink, void* user_data) {
     GstBuffer *buffer = gst_sample_get_buffer(sample);
     GstMapInfo info;
     if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
-        onNewFrame(info.data, info.size, buffer->duration, self->id);
+        onNewFrame(info.data, info.size, buffer->duration, self->id, 0);
         gst_buffer_unmap(buffer, &info);
     }
     gst_sample_unref(sample);
+}
+
+void gstreamer_on_new_sample_quality(GstAppSink *appsink, void* user_data, int quality) {
+    t_gstreamer_wrapper *self = (t_gstreamer_wrapper *) user_data;
+    GstSample *sample = gst_app_sink_pull_sample(appsink);
+    GstBuffer *buffer = gst_sample_get_buffer(sample);
+    GstMapInfo info;
+    if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
+        onNewFrame(info.data, info.size, buffer->duration, self->id, quality);
+        gst_buffer_unmap(buffer, &info);
+    }
+    gst_sample_unref(sample);
+}
+
+void gstreamer_on_new_sample_high(GstAppSink *appsink, void* user_data) {
+    gstreamer_on_new_sample_quality(appsink, user_data, 2);
+}
+
+void gstreamer_on_new_sample_medium(GstAppSink *appsink, void* user_data) {
+    gstreamer_on_new_sample_quality(appsink, user_data, 1);
+}
+
+void gstreamer_on_new_sample_low(GstAppSink *appsink, void* user_data) {
+    gstreamer_on_new_sample_quality(appsink, user_data, 0);
 }
 
 void *gstreamer_prepare_pipelines(const char *pipeline_str, int id) {
@@ -88,7 +116,21 @@ void *gstreamer_prepare_pipelines(const char *pipeline_str, int id) {
     GstElement *app_sink = gst_bin_get_by_name(GST_BIN(pipeline), "sink");
     if (app_sink != NULL) {
         g_signal_connect(app_sink, "new-sample", G_CALLBACK(gstreamer_on_new_sample), self);
+    } else {
+        GstElement *app_sink_high = gst_bin_get_by_name(GST_BIN(pipeline), "sink_h");
+        if (app_sink_high != NULL) {
+            g_signal_connect(app_sink_high, "new-sample", G_CALLBACK(gstreamer_on_new_sample_high), self);
+        }
+        GstElement *app_sink_medium= gst_bin_get_by_name(GST_BIN(pipeline), "sink_m");
+        if (app_sink_medium != NULL) {
+            g_signal_connect(app_sink_medium, "new-sample", G_CALLBACK(gstreamer_on_new_sample_medium), self);
+        }
+        GstElement *app_sink_low= gst_bin_get_by_name(GST_BIN(pipeline), "sink_l");
+        if (app_sink_low != NULL) {
+            g_signal_connect(app_sink_low, "new-sample", G_CALLBACK(gstreamer_on_new_sample_low), self);
+        }
     }
+
     g_debug("prepared");
     self->pipeline = pipeline;
     return self;

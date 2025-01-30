@@ -7,7 +7,7 @@ package gstreamer
 import "C"
 import (
 	"errors"
-	"livekit-video-server/internal/dto"
+	"livekit-video-server/internal/dto" //nolint:typecheck
 	"log"
 	"os"
 	"time"
@@ -21,13 +21,15 @@ func onBusMessage(msgType *C.char, msg *C.char, id C.int) {
 }
 
 //export onNewFrame
-func onNewFrame(frame unsafe.Pointer, size C.int, duration C.int, pipelineID C.int) {
+func onNewFrame(frame unsafe.Pointer, size C.int, duration C.int, pipelineID C.int, quality C.int) {
 	frameBytes := C.GoBytes(frame, size) //nolint:nlreturn
+	qualityLevel := int(quality)
 
 	pipeline.ch <- dto.VideoFrame{
 		Frame:    frameBytes,
 		Duration: time.Duration(duration),
 		Source:   int(pipelineID),
+		Level:    dto.Quality(qualityLevel),
 	}
 }
 

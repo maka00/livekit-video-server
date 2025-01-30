@@ -2,7 +2,7 @@
 #define GSTREAMER_WRAPPER_H
 #include <gst/gstpipeline.h>
 
-extern void onNewFrame(void *buffer, int buffer_size, int duration, int id);
+extern void onNewFrame(void *buffer, int buffer_size, int duration, int id, int quality);
 
 extern void onBusMessage(char *message_type, char *message, int id);
 
