@@ -7,7 +7,7 @@ package gstreamer
 import "C"
 import (
 	"errors"
-	"livekit-video-server/internal/dto" //nolint:typecheck
+	"livekit-video-server/internal/dto"
 	"log"
 	"os"
 	"time"

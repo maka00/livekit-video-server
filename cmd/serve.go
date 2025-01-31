@@ -62,17 +62,17 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 		log.Printf("token: %s", token)
 
 		vch := make(chan dto.VideoFrame)
+		gst := gstreamer.NewGstVideo(pipelines, vch)
+		if err = gst.Initialize(); err != nil {
+			log.Fatalf("error initializing gstreamer: %v", err)
+		}
+		gst.Run()
+
 		lkm := sfu.NewManager(lkSrv, token, vch)
 		if err := lkm.Initialize(1); err != nil {
 			log.Fatalf("error initializing livekit: %v", err)
 		}
 
-		gst := gstreamer.NewGstVideo(pipelines, vch)
-		if err = gst.Initialize(); err != nil {
-			log.Fatalf("error initializing gstreamer: %v", err)
-		}
-
-		gst.Run()
 		lkm.Run()
 		select {}
 	},
@@ -80,5 +80,6 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 
 func init() { //nolint:gochecknoinits
 	rootCmd.AddCommand(serveCmd)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	initConfig()
 }

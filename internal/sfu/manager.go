@@ -44,52 +44,66 @@ func (sfu *SFU) Initialize(nrOfTracks int) error {
 	}
 
 	sfu.room = room
-	mcastID := fmt.Sprintf("mcast-%d", 0)
-	for trackIdx := range nrOfTracks + 1 {
-		simulcastTracks := make([]*lksdk.LocalTrack, 0, 3)
-		for idx := range 3 {
+
+	const (
+		layers    = 3
+		clockrate = 90000
+	)
+
+	for trackIdx := range nrOfTracks {
+		simulcastTracks := make([]*lksdk.LocalTrack, 0, layers)
+		mcastID := fmt.Sprintf("mcast-%d", 0)
+
+		for idx := range int32(layers) {
 			codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
-				MimeType: webrtc.MimeTypeVP8}
+				MimeType:  webrtc.MimeTypeVP8,
+				ClockRate: clockrate,
+				RTCPFeedback: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBNACK}, //nolint:exhaustruct
+					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+				},
+			}
+
 			track, err := lksdk.NewLocalSampleTrack(codec,
-				lksdk.WithSimulcast(mcastID, &livekit.VideoLayer{
+				lksdk.WithSimulcast(mcastID, &livekit.VideoLayer{ //nolint:exhaustruct
 					Quality: livekit.VideoQuality(idx),
-					Width:   1280,
-					Height:  720,
+					//Width:   1280,
+					//Height:  720,
 				}))
 			if err != nil {
 				return fmt.Errorf("error creating track: %w", err)
 			}
+
+			log.Printf("track created: %s", track.ID())
 			simulcastTracks = append(simulcastTracks, track)
 		}
+
 		sfu.track[trackIdx] = simulcastTracks
 
-		//name := fmt.Sprintf("cam-%d", trackIdx)
-
-		_, err := sfu.room.LocalParticipant.PublishSimulcastTrack(simulcastTracks, &lksdk.TrackPublicationOptions{ //nolint:exhaustruct
-			Name:   mcastID,
-			Source: 0,
-			//VideoWidth:  1920,
-			//VideoHeight: 1080,
-		})
+		_, err := sfu.room.LocalParticipant.PublishSimulcastTrack(simulcastTracks,
+			&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
+				Name:   "mcast",
+				Source: livekit.TrackSource_CAMERA,
+				//VideoWidth:  1920,
+				//VideoHeight: 1080,
+			})
 		if err != nil {
 			return fmt.Errorf("error in publish: %w", err)
 		}
-		// ToDo: Use simulcast for track publishing
-		//sfu.room.LocalParticipant.PublishSimulcastTrack()
-		//_ = pubtrack.GetSimulcastTrack(livekit.VideoQuality_HIGH)
 	}
 
 	return nil
 }
 
 func (sfu *SFU) Run() {
-	for frame := range sfu.vch {
-
-		if err := sfu.track[frame.Source][frame.Level].WriteSample(media.Sample{ //nolint:exhaustruct
-			Data:     frame.Frame,
-			Duration: frame.Duration,
-		}, nil); err != nil {
-			log.Printf("error sending frame: %v", err)
+	go func() {
+		for frame := range sfu.vch {
+			if err := sfu.track[frame.Source][frame.Level].WriteSample(media.Sample{ //nolint:exhaustruct
+				Data:     frame.Frame,
+				Duration: frame.Duration,
+			}, nil); err != nil {
+				log.Printf("error sending frame: %v", err)
+			}
 		}
-	}
+	}()
 }
