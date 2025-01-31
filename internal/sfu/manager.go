@@ -52,7 +52,7 @@ func (sfu *SFU) Initialize(nrOfTracks int) error {
 
 	for trackIdx := range nrOfTracks {
 		simulcastTracks := make([]*lksdk.LocalTrack, 0, layers)
-		mcastID := fmt.Sprintf("mcast-%d", 0)
+		mcastID := fmt.Sprintf("pipeline-%d", 0)
 
 		for idx := range int32(layers) {
 			codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
@@ -82,7 +82,7 @@ func (sfu *SFU) Initialize(nrOfTracks int) error {
 
 		_, err := sfu.room.LocalParticipant.PublishSimulcastTrack(simulcastTracks,
 			&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
-				Name:   "mcast",
+				Name:   mcastID,
 				Source: livekit.TrackSource_CAMERA,
 				//VideoWidth:  1920,
 				//VideoHeight: 1080,
