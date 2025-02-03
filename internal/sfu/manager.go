@@ -3,6 +3,7 @@ package sfu
 import (
 	"fmt"
 	"livekit-video-server/internal/dto"
+	"livekit-video-server/internal/gstreamer"
 	"log"
 
 	"github.com/livekit/protocol/livekit"
@@ -12,24 +13,32 @@ import (
 )
 
 type SFU struct {
-	token string
-	url   string
-	vch   chan dto.VideoFrame
-	room  *lksdk.Room
-	track map[int][]*lksdk.LocalTrack
+	token        string
+	url          string
+	vch          chan dto.VideoFrame
+	room         *lksdk.Room
+	track        map[int][]*lksdk.LocalTrack
+	pipelineInfo []gstreamer.VideoPipeline
 }
 
-func NewManager(url string, token string, vch chan dto.VideoFrame) *SFU {
+func NewManager(url string, token string, vch chan dto.VideoFrame, pipelineInfo []gstreamer.VideoPipeline) *SFU {
 	return &SFU{
-		token: token,
-		url:   url,
-		vch:   vch,
-		room:  nil,
-		track: make(map[int][]*lksdk.LocalTrack),
+		token:        token,
+		url:          url,
+		vch:          vch,
+		room:         nil,
+		track:        make(map[int][]*lksdk.LocalTrack),
+		pipelineInfo: pipelineInfo,
 	}
 }
 
-func (sfu *SFU) Initialize(nrOfTracks int) error {
+const (
+	layers    = 3
+	clockrate = 90000
+)
+
+func (sfu *SFU) Initialize() error {
+	nrOfTracks := len(sfu.pipelineInfo)
 	callback := lksdk.NewRoomCallback()
 	callback.OnDisconnected = func() {
 		// handle disconnect
@@ -45,54 +54,102 @@ func (sfu *SFU) Initialize(nrOfTracks int) error {
 
 	sfu.room = room
 
-	const (
-		layers    = 3
-		clockrate = 90000
-	)
-
 	for trackIdx := range nrOfTracks {
-		simulcastTracks := make([]*lksdk.LocalTrack, 0, layers)
-		mcastID := fmt.Sprintf("pipeline-%d", 0)
+		mcastID := fmt.Sprintf("pipeline-%d", trackIdx)
 
-		for idx := range int32(layers) {
-			codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
-				MimeType:  webrtc.MimeTypeVP8,
-				ClockRate: clockrate,
-				RTCPFeedback: []webrtc.RTCPFeedback{
-					{Type: webrtc.TypeRTCPFBNACK}, //nolint:exhaustruct
-					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
-				},
-			}
-
-			track, err := lksdk.NewLocalSampleTrack(codec,
-				lksdk.WithSimulcast(mcastID, &livekit.VideoLayer{ //nolint:exhaustruct
-					Quality: livekit.VideoQuality(idx),
-					//Width:   1280,
-					//Height:  720,
-				}))
+		if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindSimulcast {
+			simulcastTracks, err := sfu.CreateSimulcastTracks(mcastID)
 			if err != nil {
-				return fmt.Errorf("error creating track: %w", err)
+				return fmt.Errorf("error creating simulcast tracks: %w", err)
 			}
 
-			log.Printf("track created: %s", track.ID())
-			simulcastTracks = append(simulcastTracks, track)
-		}
+			sfu.track[trackIdx] = simulcastTracks
+		} else if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindSending {
+			track, err := sfu.CreateSingleTrack(mcastID)
+			if err != nil {
+				return fmt.Errorf("error creating single track: %w", err)
+			}
 
-		sfu.track[trackIdx] = simulcastTracks
-
-		_, err := sfu.room.LocalParticipant.PublishSimulcastTrack(simulcastTracks,
-			&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
-				Name:   mcastID,
-				Source: livekit.TrackSource_CAMERA,
-				//VideoWidth:  1920,
-				//VideoHeight: 1080,
-			})
-		if err != nil {
-			return fmt.Errorf("error in publish: %w", err)
+			sfu.track[trackIdx] = []*lksdk.LocalTrack{track}
 		}
 	}
 
 	return nil
+}
+
+func (sfu *SFU) CreateSingleTrack(mcastID string) (*lksdk.LocalTrack, error) {
+	log.Printf("creating track")
+
+	codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
+		MimeType:  webrtc.MimeTypeVP8,
+		ClockRate: clockrate,
+		RTCPFeedback: []webrtc.RTCPFeedback{
+			{Type: webrtc.TypeRTCPFBNACK}, //nolint:exhaustruct
+			{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+		},
+	}
+
+	track, err := lksdk.NewLocalTrack(codec)
+	if err != nil {
+		return nil, fmt.Errorf("error creating track: %w", err)
+	}
+
+	_, err = sfu.room.LocalParticipant.PublishTrack(track,
+		&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
+			Name:   mcastID,
+			Source: livekit.TrackSource_CAMERA,
+			//VideoWidth:  1920,
+			//VideoHeight: 1080,
+		})
+
+	if err != nil {
+		return nil, fmt.Errorf("error in publish: %w", err)
+	}
+
+	return track, nil
+}
+
+func (sfu *SFU) CreateSimulcastTracks(mcastID string) ([]*lksdk.LocalTrack, error) {
+	log.Printf("creating simulcast tracks")
+
+	simulcastTracks := make([]*lksdk.LocalTrack, 0, layers)
+
+	for idx := range int32(layers) {
+		codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
+			MimeType:  webrtc.MimeTypeVP8,
+			ClockRate: clockrate,
+			RTCPFeedback: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBNACK}, //nolint:exhaustruct
+				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+			},
+		}
+
+		track, err := lksdk.NewLocalSampleTrack(codec,
+			lksdk.WithSimulcast(mcastID, &livekit.VideoLayer{ //nolint:exhaustruct
+				Quality: livekit.VideoQuality(idx),
+				//Width:   1280,
+				//Height:  720,
+			}))
+		if err != nil {
+			return nil, fmt.Errorf("error creating track: %w", err)
+		}
+
+		log.Printf("track created: %s", track.ID())
+		simulcastTracks = append(simulcastTracks, track)
+	}
+
+	_, err := sfu.room.LocalParticipant.PublishSimulcastTrack(simulcastTracks,
+		&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
+			Name:   mcastID,
+			Source: livekit.TrackSource_CAMERA,
+			//VideoWidth:  1920,
+			//VideoHeight: 1080,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("error in publish: %w", err)
+	}
+
+	return simulcastTracks, nil
 }
 
 func (sfu *SFU) Run() {

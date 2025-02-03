@@ -3,7 +3,7 @@ LIVEKIT_SERVER: ws://brick.recursio.io:7880
 ROOM_ID: room1
 CLIENT_ID: video-server
 
-PIPELINES: 1
+PIPELINES: 2
 PIPELINE_2: >
   v4l2src device=/dev/video10 
   ! videoconvert 

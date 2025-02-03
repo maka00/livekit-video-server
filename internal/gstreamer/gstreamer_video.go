@@ -10,6 +10,7 @@ import (
 	"livekit-video-server/internal/dto"
 	"log"
 	"os"
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -33,10 +34,45 @@ func onNewFrame(frame unsafe.Pointer, size C.int, duration C.int, pipelineID C.i
 	}
 }
 
+type PipelineKind int
+
+const (
+	PipelineKindUnknown = iota
+	PipelineKindSending
+	PipelineKindReceiving
+	PipelineKindSimulcast
+	PipelineKindAudio
+)
+
+type VideoPipeline struct {
+	ID       int
+	Kind     PipelineKind
+	Pipeline string
+}
+
 type GstVideo struct {
-	ch          chan dto.VideoFrame
-	strPipeline []string
-	pipe        []unsafe.Pointer
+	ch           chan dto.VideoFrame
+	strPipeline  []string
+	pipe         []unsafe.Pointer
+	infoPipeline []VideoPipeline
+}
+
+func IdentifyPipeline(pipeline string) PipelineKind {
+	if strings.Contains(pipeline, "appsrc") {
+		return PipelineKindReceiving
+	} else if strings.Contains(pipeline, "appsink") {
+		if strings.Contains(pipeline, "sink_h") &&
+			strings.Contains(pipeline, "sink_m") &&
+			strings.Contains(pipeline, "sink_l") {
+			return PipelineKindSimulcast
+		} else if strings.Contains(pipeline, "alsasrc") {
+			return PipelineKindAudio
+		}
+
+		return PipelineKindSending
+	}
+
+	return PipelineKindUnknown
 }
 
 var pipeline *GstVideo //nolint:gochecknoglobals
@@ -46,29 +82,33 @@ func NewGstVideo(pipelineStr []string, ch chan dto.VideoFrame) *GstVideo {
 	C.gstreamer_init()
 
 	pipeline = &GstVideo{
-		ch:          ch,
-		strPipeline: pipelineStr,
-		pipe:        make([]unsafe.Pointer, 0),
+		ch:           ch,
+		strPipeline:  pipelineStr,
+		pipe:         make([]unsafe.Pointer, 0),
+		infoPipeline: make([]VideoPipeline, 0),
 	}
 
 	return pipeline
 }
 
-func (gvid *GstVideo) Initialize() error {
-	for id, pipeline := range gvid.strPipeline {
+func (gvid *GstVideo) Initialize() ([]VideoPipeline, error) {
+	for idx, pipeline := range gvid.strPipeline {
 		pipelineCString := C.CString(pipeline)
 
 		defer C.free(unsafe.Pointer(pipelineCString)) //nolint:nlreturn
 
-		singlePipe := C.gstreamer_prepare_pipelines(pipelineCString, C.int(id))
+		singlePipe := C.gstreamer_prepare_pipelines(pipelineCString, C.int(idx))
 		if singlePipe == nil {
-			return errPipeline
+			return nil, errPipeline
 		}
+
+		gvid.infoPipeline = append(gvid.infoPipeline,
+			VideoPipeline{ID: idx, Kind: IdentifyPipeline(pipeline), Pipeline: pipeline})
 
 		gvid.pipe = append(gvid.pipe, singlePipe)
 	}
 
-	return nil
+	return gvid.infoPipeline, nil
 }
 
 func (gvid *GstVideo) Run() {
