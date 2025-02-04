@@ -41,7 +41,8 @@ const (
 	PipelineKindSending
 	PipelineKindReceiving
 	PipelineKindSimulcast
-	PipelineKindAudio
+	PipelineKindAudioSending
+	PipelineKindAudioReveiving
 )
 
 type VideoPipeline struct {
@@ -66,7 +67,9 @@ func IdentifyPipeline(pipeline string) PipelineKind {
 			strings.Contains(pipeline, "sink_l") {
 			return PipelineKindSimulcast
 		} else if strings.Contains(pipeline, "alsasrc") {
-			return PipelineKindAudio
+			return PipelineKindAudioSending
+		} else if strings.Contains(pipeline, "alsasink") {
+			return PipelineKindAudioReveiving
 		}
 
 		return PipelineKindSending

@@ -13,6 +13,7 @@ import (
 )
 
 type SFU struct {
+	ID           string
 	token        string
 	url          string
 	vch          chan dto.VideoFrame
@@ -21,8 +22,13 @@ type SFU struct {
 	pipelineInfo []gstreamer.VideoPipeline
 }
 
-func NewManager(url string, token string, vch chan dto.VideoFrame, pipelineInfo []gstreamer.VideoPipeline) *SFU {
+func NewManager(instanceID string,
+	url string,
+	token string,
+	vch chan dto.VideoFrame,
+	pipelineInfo []gstreamer.VideoPipeline) *SFU {
 	return &SFU{
+		ID:           instanceID,
 		token:        token,
 		url:          url,
 		vch:          vch,
@@ -55,8 +61,8 @@ func (sfu *SFU) Initialize() error {
 	sfu.room = room
 
 	for trackIdx := range nrOfTracks {
-		mcastID := fmt.Sprintf("pipeline-%d", trackIdx)
-
+		mcastID := fmt.Sprintf("%s-%d", sfu.ID, trackIdx)
+		log.Printf("creating track with ID: %d", trackIdx)
 		if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindSimulcast {
 			simulcastTracks, err := sfu.CreateSimulcastTracks(mcastID)
 			if err != nil {
@@ -71,14 +77,52 @@ func (sfu *SFU) Initialize() error {
 			}
 
 			sfu.track[trackIdx] = []*lksdk.LocalTrack{track}
+		} else if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindAudioSending {
+			track, err := sfu.CreateAudioTrack(mcastID)
+			if err != nil {
+				return fmt.Errorf("error creating single track: %w", err)
+			}
+
+			sfu.track[trackIdx] = []*lksdk.LocalTrack{track}
 		}
 	}
 
 	return nil
 }
 
+func (sfu *SFU) CreateAudioTrack(mcastID string) (*lksdk.LocalTrack, error) {
+	log.Printf("creating audio track")
+
+	codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
+		MimeType:  webrtc.MimeTypeOpus,
+		ClockRate: clockrate,
+		RTCPFeedback: []webrtc.RTCPFeedback{
+			{Type: webrtc.TypeRTCPFBNACK}, //nolint:exhaustruct
+			{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+		},
+	}
+
+	track, err := lksdk.NewLocalTrack(codec)
+	if err != nil {
+		return nil, fmt.Errorf("error creating track: %w", err)
+	}
+	log.Printf("track created: %s", track.ID())
+
+	_, err = sfu.room.LocalParticipant.PublishTrack(track,
+		&lksdk.TrackPublicationOptions{ //nolint:exhaustruct
+			Name:   mcastID,
+			Source: livekit.TrackSource_MICROPHONE,
+		})
+
+	if err != nil {
+		return nil, fmt.Errorf("error in publish: %w", err)
+	}
+
+	return track, nil
+}
+
 func (sfu *SFU) CreateSingleTrack(mcastID string) (*lksdk.LocalTrack, error) {
-	log.Printf("creating track")
+	log.Printf("creating video track")
 
 	codec := webrtc.RTPCodecCapability{ //nolint:exhaustruct
 		MimeType:  webrtc.MimeTypeVP8,
@@ -93,6 +137,7 @@ func (sfu *SFU) CreateSingleTrack(mcastID string) (*lksdk.LocalTrack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating track: %w", err)
 	}
+	log.Printf("track created: %s", track.ID())
 
 	_, err = sfu.room.LocalParticipant.PublishTrack(track,
 		&lksdk.TrackPublicationOptions{ //nolint:exhaustruct

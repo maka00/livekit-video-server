@@ -26,21 +26,21 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 		roomID := viper.GetString("ROOM_ID")
 		clientID := viper.GetString("CLIENT_ID")
 
-		nrOfPipelines := viper.GetInt("PIPELINES")
-		log.Printf("nr of pipelines to start: %d", nrOfPipelines)
+		nrOfPipelines := viper.GetInt("SENDING_PIPELINES")
+		log.Printf("nr of sendingPipelines to start: %d", nrOfPipelines)
 
-		var pipelines []string
+		var sendingPipelines []string
 		for pipelineID := range nrOfPipelines {
-			pipelineEnv := fmt.Sprintf("PIPELINE_%d", pipelineID)
+			pipelineEnv := fmt.Sprintf("SENDING_PIPELINE_%d", pipelineID)
 			if pipelineEnv == "" {
-				log.Fatalf("PIPELINE_%d not set", pipelineID)
+				log.Fatalf("SENDING_PIPELINE_%d not set", pipelineID)
 			}
 			pipelineStr := viper.GetString(pipelineEnv)
 			if pipelineStr == "" {
-				log.Fatalf("PIPELINE_%d not set", pipelineID)
+				log.Fatalf("SENDING_PIPELINE_%d not set", pipelineID)
 			}
 			log.Printf("pipeline %d: %s", pipelineID, pipelineStr)
-			pipelines = append(pipelines, pipelineStr)
+			sendingPipelines = append(sendingPipelines, pipelineStr)
 		}
 
 		tokenEndpoint := &url.URL{ //nolint:exhaustruct
@@ -62,14 +62,14 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 		log.Printf("token: %s", token)
 
 		vch := make(chan dto.VideoFrame)
-		gst := gstreamer.NewGstVideo(pipelines, vch)
+		gst := gstreamer.NewGstVideo(sendingPipelines, vch)
 		pipelineInfo, err := gst.Initialize()
 		if err != nil {
 			log.Fatalf("error initializing gstreamer: %v", err)
 		}
 		gst.Run()
 
-		lkm := sfu.NewManager(lkSrv, token, vch, pipelineInfo)
+		lkm := sfu.NewManager(clientID, lkSrv, token, vch, pipelineInfo)
 		if err := lkm.Initialize(); err != nil {
 			log.Fatalf("error initializing livekit: %v", err)
 		}

@@ -4,20 +4,28 @@ ROOM_ID: room1
 CLIENT_ID: video-server
 
 # Sending pipelines:
-PIPELINES: 2
-PIPELINE_2: >
-  v4l2src device=/dev/video0 
-  ! videoconvert 
-  ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1 
-  ! appsink emit-signals=true name=sink
+SENDING_PIPELINES: 3
+SENDING_PIPELINE_2: >
+  alsasrc device=hw:0,0 
+  ! audiorate 
+  ! audioconvert 
+  ! opusenc 
+  ! appsink emit-signals=true name=sink 
+
+#SENDING_PIPELINE_2: >
+#  v4l2src device=/dev/video0
+#  ! videoconvert
+#  ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1
+#  ! appsink emit-signals=true name=sink
+
 # single pipeline:
-PIPELINE_1: >
+SENDING_PIPELINE_1: >
   v4l2src device=/dev/video11 
   ! videoconvert 
   ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1 
   ! appsink emit-signals=true name=sink
 # simucast pipeline:
-PIPELINE_0: >
+SENDING_PIPELINE_0: >
   v4l2src device=/dev/video10
   ! queue 
   ! tee name=t
