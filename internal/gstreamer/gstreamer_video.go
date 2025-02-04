@@ -59,14 +59,18 @@ type GstVideo struct {
 }
 
 func IdentifyPipeline(pipeline string) PipelineKind {
+	isSimulcast := strings.Contains(pipeline, "sink_h") &&
+		strings.Contains(pipeline, "sink_m") &&
+		strings.Contains(pipeline, "sink_l")
+
 	if strings.Contains(pipeline, "appsrc") {
 		return PipelineKindReceiving
 	} else if strings.Contains(pipeline, "appsink") {
-		if strings.Contains(pipeline, "sink_h") &&
-			strings.Contains(pipeline, "sink_m") &&
-			strings.Contains(pipeline, "sink_l") {
+		if isSimulcast {
 			return PipelineKindSimulcast
-		} else if strings.Contains(pipeline, "alsasrc") {
+		}
+
+		if strings.Contains(pipeline, "alsasrc") {
 			return PipelineKindAudioSending
 		} else if strings.Contains(pipeline, "alsasink") {
 			return PipelineKindAudioReveiving

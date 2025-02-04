@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"errors"
 	"fmt"
 	"livekit-video-server/internal/dto"
 	"livekit-video-server/internal/gstreamer"
@@ -43,6 +44,8 @@ const (
 	clockrate = 90000
 )
 
+var errPipelineKind = errors.New("error creating track for pipeline kind")
+
 func (sfu *SFU) Initialize() error {
 	nrOfTracks := len(sfu.pipelineInfo)
 	callback := lksdk.NewRoomCallback()
@@ -63,27 +66,31 @@ func (sfu *SFU) Initialize() error {
 	for trackIdx := range nrOfTracks {
 		mcastID := fmt.Sprintf("%s-%d", sfu.ID, trackIdx)
 		log.Printf("creating track with ID: %d", trackIdx)
-		if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindSimulcast {
+
+		switch sfu.pipelineInfo[trackIdx].Kind {
+		case gstreamer.PipelineKindSimulcast:
 			simulcastTracks, err := sfu.CreateSimulcastTracks(mcastID)
 			if err != nil {
 				return fmt.Errorf("error creating simulcast tracks: %w", err)
 			}
 
 			sfu.track[trackIdx] = simulcastTracks
-		} else if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindSending {
+		case gstreamer.PipelineKindSending:
 			track, err := sfu.CreateSingleTrack(mcastID)
 			if err != nil {
 				return fmt.Errorf("error creating single track: %w", err)
 			}
 
 			sfu.track[trackIdx] = []*lksdk.LocalTrack{track}
-		} else if sfu.pipelineInfo[trackIdx].Kind == gstreamer.PipelineKindAudioSending {
+		case gstreamer.PipelineKindAudioSending:
 			track, err := sfu.CreateAudioTrack(mcastID)
 			if err != nil {
 				return fmt.Errorf("error creating single track: %w", err)
 			}
 
 			sfu.track[trackIdx] = []*lksdk.LocalTrack{track}
+		default:
+			return errPipelineKind
 		}
 	}
 
@@ -106,6 +113,7 @@ func (sfu *SFU) CreateAudioTrack(mcastID string) (*lksdk.LocalTrack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating track: %w", err)
 	}
+
 	log.Printf("track created: %s", track.ID())
 
 	_, err = sfu.room.LocalParticipant.PublishTrack(track,
@@ -137,6 +145,7 @@ func (sfu *SFU) CreateSingleTrack(mcastID string) (*lksdk.LocalTrack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating track: %w", err)
 	}
+
 	log.Printf("track created: %s", track.ID())
 
 	_, err = sfu.room.LocalParticipant.PublishTrack(track,
