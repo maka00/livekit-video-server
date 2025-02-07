@@ -2,10 +2,11 @@ TOKEN_SERVER: brick.recursio.io:3030
 LIVEKIT_SERVER: ws://brick.recursio.io:7880
 ROOM_ID: room1
 CLIENT_ID: video-server
-
-# Sending pipelines:
-SENDING_PIPELINES: 3
-SENDING_PIPELINE_2: >
+RECEIVER_VIDEO_ID: room-a-0
+RECEIVER_AUDIO_ID: room-a-1
+# pipelines:
+PIPELINES: 5
+PIPELINE_3: >
   alsasrc device=hw:0,0 
   ! audiorate 
   ! audioconvert 
@@ -19,13 +20,13 @@ SENDING_PIPELINE_2: >
 #  ! appsink emit-signals=true name=sink
 
 # single pipeline:
-SENDING_PIPELINE_1: >
+PIPELINE_1: >
   v4l2src device=/dev/video11 
   ! videoconvert 
   ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1 
   ! appsink emit-signals=true name=sink
 # simucast pipeline:
-SENDING_PIPELINE_0: >
+PIPELINE_2: >
   v4l2src device=/dev/video10
   ! queue 
   ! tee name=t
@@ -48,3 +49,33 @@ SENDING_PIPELINE_0: >
   ! video/x-raw,width=320,height=240 
   ! vp8enc target-bitrate=500000 keyframe-max-dist=120 deadline=1 
   ! appsink emit-signals=true name=sink_l
+# receiving pipeline:
+PIPELINE_0: >
+  appsrc name=source emit-signals=true is-live=true block=true do-timestamp=true format=time
+  ! application/x-rtp, encoding-name=(string)VP8, payload=(int)96
+  ! queue
+  ! rtpjitterbuffer latency=150 max-dropout-time=200
+  ! queue
+  ! rtpvp8depay  
+  ! vp8dec
+  ! videoconvert
+  ! v4l2sink device=/dev/video13 sync=true
+PIPELINE_4: >
+  appsrc name=source emit-signals=true is-live=true block=true do-timestamp=true format=time
+  ! application/x-rtp, encoding-name=(string)OPUS, payload=(int)111,clock-rate=48000
+  ! rtpopusdepay  
+  ! opusdec
+  ! audioresample 
+  ! audioconvert 
+  ! alsasink device=hw:3,0 sync=true
+
+
+#  ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1
+#  ! matroskamux
+#  ! filesink location=video.mkv
+#  ! v4l2sink device=/dev/video13 sync=false
+#  ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)VP8
+# ! rtpvp8depay
+# ! vp8dec
+# ! videoconvert ! video/x-raw,width=624,height=352
+# ! v4l2sink device=/dev/video13

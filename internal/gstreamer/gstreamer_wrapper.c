@@ -9,12 +9,14 @@ void gstreamer_on_new_sample_high(GstAppSink *appsink, void* user_data);
 void gstreamer_on_new_sample_medium(GstAppSink *appsink, void* user_data);
 void gstreamer_on_new_sample_low(GstAppSink *appsink, void* user_data);
 void gstreamer_on_new_sample_quality(GstAppSink *appsink, void* user_data, int quality);
+void gstreamer_on_need_data(GstAppSrc *appsrc, guint unused_size, void* user_data);
 
 gboolean gstreamer_bus_watch(GstBus *bus, GstMessage *msg, void *user_data);
 static GMainLoop *loop = NULL;
 
 typedef struct {
     GstElement *pipeline;
+    GstElement *source_element;
     guint bus_watch_id;
     int id;
 } t_gstreamer_wrapper;
@@ -58,6 +60,10 @@ gboolean gstreamer_bus_watch(GstBus *bus, GstMessage *msg, void* user_data) {
         }
     }
     return TRUE;
+}
+void gstreamer_on_need_data(GstAppSrc *appsrc, guint unused_size, void* user_data) {
+    t_gstreamer_wrapper *self = (t_gstreamer_wrapper *) user_data;
+    onNeedData(unused_size, self->id);
 }
 
 void gstreamer_on_new_sample(GstAppSink *appsink, void* user_data) {
@@ -113,6 +119,12 @@ void *gstreamer_prepare_pipelines(const char *pipeline_str, int id) {
     self->bus_watch_id = gst_bus_add_watch(bus, gstreamer_bus_watch, self);
     self->id = id;
     gst_object_unref(bus);
+    self->source_element = NULL;
+    GstElement *app_source = gst_bin_get_by_name(GST_BIN(pipeline), "source");
+    if (app_source != NULL) {
+        self->source_element = app_source;
+        g_signal_connect(app_source, "need-data", G_CALLBACK(gstreamer_on_need_data), self);
+    }
     GstElement *app_sink = gst_bin_get_by_name(GST_BIN(pipeline), "sink");
     if (app_sink != NULL) {
         g_signal_connect(app_sink, "new-sample", G_CALLBACK(gstreamer_on_new_sample), self);
@@ -143,11 +155,18 @@ void gstreamer_dispose_pipeline(void *pipeline) {
     free(self);
 }
 
-void gstreamer_push_buffer(void *pipeline, void *buffer, size_t buffer_size, unsigned long duration) {
+void gstreamer_push_buffer(void *pipeline, void *buffer, int buffer_size, int duration) {
+    g_debug("pushing buffer");
     t_gstreamer_wrapper *self = (t_gstreamer_wrapper *) pipeline;
     if (self == NULL) {
         return;
     }
+    gpointer p = g_memdup(buffer, buffer_size);
+    //GstBuffer *data = gst_buffer_new_wrapped(p, buffer_size);
+    GstBuffer *gst_buffer = gst_buffer_new_wrapped(p, buffer_size);
+    // GST_BUFFER_TIMESTAMP(gst_buffer) = duration;
+    gst_app_src_push_buffer(GST_APP_SRC(self->source_element), gst_buffer);
+    //gstreamer_push_buffer(self->source_element, buffer, buffer_size, duration);
 }
 
 void gstreamer_start_pipeline(void *state) {

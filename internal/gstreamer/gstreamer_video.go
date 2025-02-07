@@ -34,6 +34,11 @@ func onNewFrame(frame unsafe.Pointer, size C.int, duration C.int, pipelineID C.i
 	}
 }
 
+//export onNeedData
+func onNeedData(unused_size C.int, pipelineID C.int) { //nolint:revive,stylecheck
+	// log.Printf("NeedData(%d): %d", pipelineID, unused_size)
+}
+
 type PipelineKind int
 
 const (
@@ -53,6 +58,7 @@ type VideoPipeline struct {
 
 type GstVideo struct {
 	ch           chan dto.VideoFrame
+	sch          chan dto.VideoFrame
 	strPipeline  []string
 	pipe         []unsafe.Pointer
 	infoPipeline []VideoPipeline
@@ -64,6 +70,10 @@ func IdentifyPipeline(pipeline string) PipelineKind {
 		strings.Contains(pipeline, "sink_l")
 
 	if strings.Contains(pipeline, "appsrc") {
+		if strings.Contains(pipeline, "alsasink") {
+			return PipelineKindAudioReveiving
+		}
+
 		return PipelineKindReceiving
 	} else if strings.Contains(pipeline, "appsink") {
 		if isSimulcast {
@@ -72,8 +82,6 @@ func IdentifyPipeline(pipeline string) PipelineKind {
 
 		if strings.Contains(pipeline, "alsasrc") {
 			return PipelineKindAudioSending
-		} else if strings.Contains(pipeline, "alsasink") {
-			return PipelineKindAudioReveiving
 		}
 
 		return PipelineKindSending
@@ -85,11 +93,12 @@ func IdentifyPipeline(pipeline string) PipelineKind {
 var pipeline *GstVideo //nolint:gochecknoglobals
 var errPipeline = errors.New("error creating pipeline")
 
-func NewGstVideo(pipelineStr []string, ch chan dto.VideoFrame) *GstVideo {
+func NewGstVideo(pipelineStr []string, ch chan dto.VideoFrame, sch chan dto.VideoFrame) *GstVideo {
 	C.gstreamer_init()
 
 	pipeline = &GstVideo{
 		ch:           ch,
+		sch:          sch,
 		strPipeline:  pipelineStr,
 		pipe:         make([]unsafe.Pointer, 0),
 		infoPipeline: make([]VideoPipeline, 0),
@@ -123,9 +132,36 @@ func (gvid *GstVideo) Run() {
 		C.gstreamer_start_main_loop()
 	}()
 
-	for _, pipe := range gvid.pipe {
+	for idx, pipe := range gvid.pipe {
+		if (gvid.infoPipeline[idx].Kind == PipelineKindReceiving) ||
+			(gvid.infoPipeline[idx].Kind == PipelineKindAudioReveiving) {
+			continue
+		}
+
 		C.gstreamer_start_pipeline(pipe)
 	}
+}
+
+func (gvid *GstVideo) StartPipeline(id int) error {
+	C.gstreamer_start_pipeline(gvid.pipe[id])
+
+	go func() {
+		for idx := range gvid.sch {
+			duration := idx.Duration.Nanoseconds()
+			pipeline := gvid.pipe[idx.Source]
+			buffer := unsafe.Pointer(&idx.Frame[0])
+
+			C.gstreamer_push_buffer(pipeline, buffer, C.int(len(idx.Frame)), C.int(duration))
+		}
+	}()
+
+	return nil
+}
+
+func (gvid *GstVideo) StopPipeline(id int) error {
+	C.gstreamer_stop_pipeline(gvid.pipe[id])
+
+	return nil
 }
 
 func (gvid *GstVideo) Stop() {

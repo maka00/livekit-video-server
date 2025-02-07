@@ -3,6 +3,7 @@
 #include <gst/gstpipeline.h>
 
 extern void onNewFrame(void *buffer, int buffer_size, int duration, int id, int quality);
+extern void onNeedData(int unused_size, int id);
 
 extern void onBusMessage(char *message_type, char *message, int id);
 
@@ -17,7 +18,7 @@ void* gstreamer_prepare_pipelines(const char *pipeline_str, int id);
 
 void gstreamer_dispose_pipeline(void *state);
 
-void gstreamer_push_buffer(void *state, void *buffer, size_t buffer_size, unsigned long duration);
+void gstreamer_push_buffer(void *state, void *buffer, int buffer_size, int duration);
 
 void gstreamer_start_pipeline(void *state);
 
