@@ -6,19 +6,13 @@ RECEIVER_VIDEO_ID: room-a-0
 RECEIVER_AUDIO_ID: room-a-1
 # pipelines:
 PIPELINES: 5
+# sending pipelines:
 PIPELINE_3: >
   alsasrc device=hw:0,0 
   ! audiorate 
   ! audioconvert 
   ! opusenc 
   ! appsink emit-signals=true name=sink 
-
-#SENDING_PIPELINE_2: >
-#  v4l2src device=/dev/video0
-#  ! videoconvert
-#  ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1
-#  ! appsink emit-signals=true name=sink
-
 # single pipeline:
 PIPELINE_1: >
   v4l2src device=/dev/video11 
@@ -49,7 +43,8 @@ PIPELINE_2: >
   ! video/x-raw,width=320,height=240 
   ! vp8enc target-bitrate=500000 keyframe-max-dist=120 deadline=1 
   ! appsink emit-signals=true name=sink_l
-# receiving pipeline:
+# receiving pipelines:
+# video pipeline:
 PIPELINE_0: >
   appsrc name=source emit-signals=true is-live=true block=true do-timestamp=true format=time
   ! application/x-rtp, encoding-name=(string)VP8, payload=(int)96
@@ -60,6 +55,7 @@ PIPELINE_0: >
   ! vp8dec
   ! videoconvert
   ! v4l2sink device=/dev/video13 sync=true
+# audio pipeline:
 PIPELINE_4: >
   appsrc name=source emit-signals=true is-live=true block=true do-timestamp=true format=time
   ! application/x-rtp, encoding-name=(string)OPUS, payload=(int)111,clock-rate=48000
@@ -69,13 +65,3 @@ PIPELINE_4: >
   ! audioconvert 
   ! alsasink device=hw:3,0 sync=true
 
-
-#  ! vp8enc target-bitrate=1500000 keyframe-max-dist=120 deadline=1
-#  ! matroskamux
-#  ! filesink location=video.mkv
-#  ! v4l2sink device=/dev/video13 sync=false
-#  ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)VP8
-# ! rtpvp8depay
-# ! vp8dec
-# ! videoconvert ! video/x-raw,width=624,height=352
-# ! v4l2sink device=/dev/video13
