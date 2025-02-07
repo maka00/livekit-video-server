@@ -16,15 +16,20 @@ import (
 )
 
 type SFU struct {
-	ID           string
-	token        string
-	url          string
-	vch          chan dto.VideoFrame
-	sch          chan dto.VideoFrame
-	room         *lksdk.Room
-	track        map[int][]*lksdk.LocalTrack
-	pipelineInfo []gstreamer.VideoPipeline
-	controller   OutputPipeline
+	ID      string
+	token   string
+	url     string
+	vch     chan dto.VideoFrame
+	sch     chan dto.VideoFrame
+	room    *lksdk.Room
+	track   map[int][]*lksdk.LocalTrack
+	options Options
+}
+type Options struct {
+	PipelineInfo    []gstreamer.VideoPipeline
+	Controller      OutputPipeline
+	ReveiverAudioID string
+	ReveiverVideoID string
 }
 
 type OutputPipeline interface {
@@ -37,18 +42,16 @@ func NewManager(instanceID string,
 	token string,
 	vch chan dto.VideoFrame,
 	sch chan dto.VideoFrame,
-	pipelineInfo []gstreamer.VideoPipeline,
-	controller OutputPipeline) *SFU {
+	options Options) *SFU {
 	return &SFU{
-		ID:           instanceID,
-		token:        token,
-		url:          url,
-		vch:          vch,
-		sch:          sch,
-		room:         nil,
-		track:        make(map[int][]*lksdk.LocalTrack),
-		pipelineInfo: pipelineInfo,
-		controller:   controller,
+		ID:      instanceID,
+		token:   token,
+		url:     url,
+		vch:     vch,
+		sch:     sch,
+		room:    nil,
+		track:   make(map[int][]*lksdk.LocalTrack),
+		options: options,
 	}
 }
 
@@ -76,8 +79,8 @@ func findSendingPipeline(pipelineInfo []gstreamer.VideoPipeline, kind gstreamer.
 	return -1
 }
 
-func (sfu *SFU) HandleReceivedFrames(track *webrtc.TrackRemote, pipelineID int) {
-	if err := sfu.controller.StartPipeline(pipelineID); err != nil {
+func (sfu *SFU) handleReceivedFrames(track *webrtc.TrackRemote, pipelineID int) {
+	if err := sfu.options.Controller.StartPipeline(pipelineID); err != nil {
 		log.Fatalf("error starting pipeline %d: %v", pipelineID, err)
 	}
 
@@ -113,21 +116,22 @@ func (sfu *SFU) HandleReceivedFrames(track *webrtc.TrackRemote, pipelineID int) 
 func (sfu *SFU) OnTrackSubscribed(track *webrtc.TrackRemote,
 	publication *lksdk.RemoteTrackPublication,
 	participant *lksdk.RemoteParticipant) {
-	log.Printf("publication: %s track subscribed: %s", participant.Identity(), track.ID())
+	log.Printf("publication: %s publication: %s track subscribed: %s",
+		participant.Identity(), publication.Name(), track.ID())
 
-	if publication.Kind() == lksdk.TrackKindVideo {
-		pipelineID := findSendingPipeline(sfu.pipelineInfo, gstreamer.PipelineKindReceiving)
-		sfu.HandleReceivedFrames(track, pipelineID)
+	if publication.Kind() == lksdk.TrackKindVideo && publication.Name() == sfu.options.ReveiverVideoID {
+		pipelineID := findSendingPipeline(sfu.options.PipelineInfo, gstreamer.PipelineKindReceiving)
+		sfu.handleReceivedFrames(track, pipelineID)
 	}
 
-	if publication.Kind() == lksdk.TrackKindAudio {
-		pipelineID := findSendingPipeline(sfu.pipelineInfo, gstreamer.PipelineKindAudioReveiving)
-		sfu.HandleReceivedFrames(track, pipelineID)
+	if publication.Kind() == lksdk.TrackKindAudio && publication.Name() == sfu.options.ReveiverAudioID {
+		pipelineID := findSendingPipeline(sfu.options.PipelineInfo, gstreamer.PipelineKindAudioReveiving)
+		sfu.handleReceivedFrames(track, pipelineID)
 	}
 }
 
 func (sfu *SFU) Initialize() error { //nolint:cyclop
-	nrOfTracks := len(sfu.pipelineInfo)
+	nrOfTracks := len(sfu.options.PipelineInfo)
 	callback := lksdk.NewRoomCallback()
 	callback.OnDisconnected = func() {
 		// handle disconnect
@@ -148,7 +152,7 @@ func (sfu *SFU) Initialize() error { //nolint:cyclop
 		mcastID := fmt.Sprintf("%s-%d", sfu.ID, trackIdx)
 		log.Printf("creating track with ID: %d", trackIdx)
 
-		switch sfu.pipelineInfo[trackIdx].Kind {
+		switch sfu.options.PipelineInfo[trackIdx].Kind {
 		case gstreamer.PipelineKindSimulcast:
 			simulcastTracks, err := sfu.CreateSimulcastTracks(mcastID)
 			if err != nil {

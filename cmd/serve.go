@@ -25,6 +25,8 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 		lkSrv := viper.GetString("LIVEKIT_SERVER")
 		roomID := viper.GetString("ROOM_ID")
 		clientID := viper.GetString("CLIENT_ID")
+		receiverVideoID := viper.GetString("RECEIVER_VIDEO_ID")
+		receiverAudioID := viper.GetString("RECEIVER_AUDIO_ID")
 
 		nrOfPipelines := viper.GetInt("PIPELINES")
 		log.Printf("nr of pipelines to start: %d", nrOfPipelines)
@@ -71,7 +73,12 @@ var serveCmd = &cobra.Command{ //nolint:exhaustruct,gochecknoglobals
 		}
 		gst.Run()
 
-		lkm := sfu.NewManager(clientID, lkSrv, token, vch, sch, pipelineInfo, gst)
+		lkm := sfu.NewManager(clientID, lkSrv, token, vch, sch, sfu.Options{
+			PipelineInfo:    pipelineInfo,
+			Controller:      gst,
+			ReveiverAudioID: receiverAudioID,
+			ReveiverVideoID: receiverVideoID,
+		})
 		if err := lkm.Initialize(); err != nil {
 			log.Fatalf("error initializing livekit: %v", err)
 		}
