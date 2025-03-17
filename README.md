@@ -16,6 +16,45 @@ The project consists of the following subprojects:
 For the cameras a v4l2-loopback device is used with a small C application writing two video files in an endless loop to 
 the devices. For an python example to achieve this see: [endless-stream](https://github.com/maka00/gst-drm-output/tree/main/endless-stream)
 
+## Architecture
+
+The following is an architecture how the services are connected:
+
+
+```mermaid
+graph TD
+    subgraph tiny
+        endless_stream[endless-stream]
+        video10[/dev/video10/]
+        video11[/dev/video11/]
+        livekit_video_server[livekit-video-server]
+        endless_stream -->|creates video signals| video10
+        endless_stream -->|creates video signals| video11
+        livekit_video_server -->|reads video signals| video10
+        livekit_video_server -->|reads video signals| video11
+    end
+
+    subgraph brick
+        livekit_video_server -->|streams to| livekit_server
+        livekit_server[LiveKit Server]
+        livekit_keyserver[LiveKit Keyserver]
+        livekit_server_ui[LiveKit Server UI]
+        livekit_server_ui --> livekit_keyserver
+    end
+
+    subgraph Android Device
+        livekit_android_ui[LiveKit Android UI]
+        livekit_android_ui -->|requests key| livekit_server_ui
+        livekit_android_ui -->|reads WebRTC signal| livekit_server
+    end
+
+    subgraph WebClient 
+        livekit_webclient_ui[LiveKit Android UI]
+        livekit_webclient_ui -->|requests key| livekit_server_ui
+        livekit_webclient_ui -->|reads WebRTC signal| livekit_server
+    end
+```
+
 
 ## Screenshots
 
